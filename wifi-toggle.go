@@ -47,6 +47,14 @@ var indexTmpl = template.Must(template.New("index").Parse(`
 <html>
 <head>
 <title>W1XM WiFi Toggle</title>
+<style type="text/css">
+.down {
+color: red
+}
+.up {
+color: green
+}
+</style>
 </head>
 <body>
 <h1>W1XM WiFi Toggle</h1>
@@ -58,19 +66,33 @@ Password: <input type="password" name="password" value="{{.Password}}"/> <input 
 {{.}}
 </pre>
 {{end}}
+{{with .Interfaces}}
+<h2>Interfaces</h2>
+{{range .}}
+<span class="{{if .AdminUp}}up{{else}}down{{end}}">{{.Name}}</span> 
+{{end}}
+{{end}}
+{{with .Scripts}}
 <h2>Scripts</h2>
 <ul>
-{{range $index, $name := .Scripts}}
+{{range $index, $name := .}}
 <li><button type="submit" name="execute" value="{{$index}}">{{$name}}</button></li>
 {{end}}
 </ul>
+{{end}}
 </form>
 </body>
 </html>
 `))
 
+type Interface struct {
+	Name    string
+	AdminUp bool
+}
+
 func handlerErr(w http.ResponseWriter, r *http.Request) error {
 	password := r.FormValue("password")
+	interfaces := make(map[int]*Interface)
 	scripts := make(map[int]string)
 	var result string
 	if password != "" {
@@ -95,14 +117,6 @@ func handlerErr(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
-		if err := client.Walk("1.3.6.1.4.1.14988.1.1.8.1.1.2", func(pdu gosnmp.SnmpPDU) error {
-			oid := stringToObjectIdentifier(pdu.Name)
-			scripts[oid[len(oid)-1]] = string(pdu.Value.([]byte))
-			return nil
-		}); err != nil {
-			return err
-		}
-
 		execute := r.FormValue("execute")
 		if execute != "" {
 			res, err := client.Get([]string{"1.3.6.1.4.1.14988.1.1.18.1.1.2." + execute})
@@ -113,13 +127,50 @@ func handlerErr(w http.ResponseWriter, r *http.Request) error {
 				result = string(res.Variables[0].Value.([]byte))
 			}
 		}
+
+		iface := func(name string) *Interface {
+			oid := stringToObjectIdentifier(name)
+			idx := oid[len(oid)-1]
+			if i, ok := interfaces[idx]; ok == true {
+				return i
+			}
+			interfaces[idx] = &Interface{}
+			return interfaces[idx]
+		}
+
+		// IF-MIB::ifName
+		if err := client.Walk("1.3.6.1.2.1.31.1.1.1.1", func(pdu gosnmp.SnmpPDU) error {
+			iface(pdu.Name).Name = string(pdu.Value.([]byte))
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		// IF-MIB::ifAdminStatus
+		if err := client.Walk("1.3.6.1.2.1.2.2.1.7", func(pdu gosnmp.SnmpPDU) error {
+			iface(pdu.Name).AdminUp = pdu.Value.(int) == 1
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		// Mikrotik::mtxrScriptName
+		if err := client.Walk("1.3.6.1.4.1.14988.1.1.8.1.1.2", func(pdu gosnmp.SnmpPDU) error {
+			oid := stringToObjectIdentifier(pdu.Name)
+			scripts[oid[len(oid)-1]] = string(pdu.Value.([]byte))
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 	return indexTmpl.Execute(w, struct {
-		Password string
-		Scripts  map[int]string
-		Result   string
+		Password   string
+		Interfaces map[int]*Interface
+		Scripts    map[int]string
+		Result     string
 	}{
 		password,
+		interfaces,
 		scripts,
 		result,
 	})
