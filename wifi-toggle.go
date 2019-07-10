@@ -100,6 +100,7 @@ func handlerErr(w http.ResponseWriter, r *http.Request) error {
 			Target:        *target,
 			Port:          161,
 			Version:       gosnmp.Version3,
+			MsgFlags:      gosnmp.AuthNoPriv,
 			SecurityModel: gosnmp.UserSecurityModel,
 			SecurityParameters: &gosnmp.UsmSecurityParameters{
 				UserName:                 *user,
