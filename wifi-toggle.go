@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	target = flag.String("target", "w1xm-exp-1.mit.edu", "target host")
+	target = flag.String("target", "w1xm-21.mit.edu", "target host")
 	user   = flag.String("user", "w1xm", "username")
 )
 
